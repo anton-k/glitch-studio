@@ -15,18 +15,6 @@ nchnls = 2
 #define REC_LOOP_INSTR # 33 #
 #define PLAY_LOOP_INSTR # 34 #
 
-#define IDENTITY_FX_INSTR   # 40 # 
-#define REVERB_FX_INSTR     # 41 #
-#define BBCUTS_FX_INSTR     # 42 #
-#define DELAY_FX_INSTR      # 43 #
-#define TREMOLO_FX_INSTR    # 44 #
-#define CHORUS_FX_INSTR     # 45 #
-#define PULSAR_1_FX_INSTR   # 46 #  
-#define PULSAR_2_FX_INSTR   # 47 #  
-#define PULSAR_3_FX_INSTR   # 48 # 
-#define PULSAR_4_FX_INSTR   # 49 #
-#define PAN_CIRCLE_FX_INSTR # 50 #
-
 #ifndef SIZE
     #define SIZE        # 16 #
 #end
@@ -94,73 +82,6 @@ gkNextLoopSpeed[]   init $LOOP_SIZE
 
 gkLoopRecTimes[]     init 0
 gkNextLoopRecTimes[] init 0
-
-; ----------------------------------------------------------
-; Fx matrix
-
-#ifndef SIZE
-    #define FX_SIZE        # 4 #
-#end
-
-gaOuts[][]          init 2 * ($FX_SIZE + 1), $SIZE
-gaLoopOuts[][]      init 2 * ($FX_SIZE + 1), $LOOP_SIZE
-
-giFxs[][]            init 2 * $FX_SIZE, $SIZE
-giLoopFxs[][]        init 2 * $FX_SIZE, $LOOP_SIZE
-
-; ---------------------------------------------------------
-; effects
-
-opcode ReadFx, aa, iii
-    iType, iChannel, iId xin
-    if iType == $SAMPLE_TYPE then
-        aL = gaOuts[2 * iId][iChannel]
-        aR = gaOuts[2 * iId + 1][iChannel]
-    else
-        aL = gaLoopOuts[2 * iId][iChannel]
-        aR = gaLoopOuts[2 * iId + 1][iChannel]
-    endif
-endop
-
-opcode WriteFx, 0, aakaaiii
-    aDryL, aDryR, kMix, aWetL, aWetR, kMix, iType, iChannel, iPrevId xin
-    iId = iPrevId + 1
-
-    aL ntrpol aDryL, aWetL, kMix
-    aR ntrpol aDryR, aWetR, kMix 
-    if iType == $SAMPLE_TYPE then
-        gaOuts[2 * iId][iChannel] = aL
-        gaOuts[2 * iId + 1][iChannel] = aR
-    else
-        gaLoopOuts[2 * iId][iChannel] = aL
-        gaLoopOuts[2 * iId + 1][iChannel] = aR
-    endif        
-endop
-
-instr $IDENTITY_FX_INSTR 
-    iType, iChannel, iId passign 4
-    aL, aR ReadFx iType, iChannel, iId
-    WriteFx aDryL, aDryR, 0, aL, aR, iType, iChannel, iId
-endin
-
-instr $REVERB_FX_INSTR
-    iType, iChannel, iId, iMix, ifblvl, ifco passign 4  
-    aDryL, aDryR ReadFx iType, iChannel, iId
-
-    aL, aR reverbsc aDryL, aDryR, ifblvl, ifco
-
-    WriteFx aDryL, aDryR, iMix, aL, aR, iType, iChannel, iId  
-endin
-
-instr $BBCUTS_FX_INSTR
-    iType, iChannel, iId, iMix, isubdiv, ibarlength, iphrasebars, inumrepeats passign 4  
-    aDryL, aDryR ReadFx iType, iChannel, iId
-    ibps = i(gkTempo)
-
-    aL, aR bbcuts aDryL, aDryR, ibps, isubdiv, ibarlength, iphrasebars, inumrepeats    
-
-    WriteFx aDryL, aDryR, iMix, aL, aR, iType, iChannel, iId  
-endin
 
 ; ---------------------------------------------------------
 
@@ -310,24 +231,6 @@ instr SetLoopSpeed
 endin
 
 ; -------------------------------------------------
-; FX chain API
-
-instr ReverbFx 
-    iIsLoop, iChannel, iPos, iMix, iFbklvl, iFco passign 4
-    StopFx iIsLoop, iChannel, iPos
-    iId GetFxId $REVERB_FX_INSTR, iIsLoop, iChannel, iPos
-    event_i "i", iId, 0, -1, iIsLoop, iChannel, iPos, iMix, iFbklvl, iFco
-endin
-
-instr BbcutsFx 
-    iType, iChannel, iId, iMix, isubdiv, ibarlength, iphrasebars, inumrepeats passign 4
-    StopFx iIsLoop, iChannel, iPos
-    iId GetFxId $BBCUTS_FX_INSTR, iIsLoop, iChannel, iPos
-    event_i "i", iId, 0, -1, iType, iChannel, iId, iMix, isubdiv, ibarlength, iphrasebars, inumrepeats
-endin
-
-
-; -------------------------------------------------
 
 opcode FracInstr, k, kk
     kInstrNum, kChannel xin
@@ -390,10 +293,6 @@ opcode StopInstr 0,k
     turnoff2 kInstrId, 4, gkFadeTime
 endop
 
-opcode, UpdateFxChain, 0, i
-    ; TODO
-endop
-
 instr PlaybackChannel
     iChannel = p4
     kChannel init iChannel
@@ -420,8 +319,6 @@ instr PlaybackChannel
             gkSpeed[kChannel] = gkNextSpeed[kChannel]
         endif
     endif
-
-    UpdateFxChain kChannel
 endin
 
 opcode UpdateLoopLocalTick, 0,k 
@@ -438,10 +335,6 @@ opcode IsTriggerTime, k,k
     kChannel xin    
     kRes = (gkTick == 1 && gkLoopLocalTicks[kChannel] == 0) ? 1 : 0
     xout kRes
-endop
-
-opcode, UpdateLoopFxChain, 0, i
-    ; TODO
 endop
 
 instr LoopChannel
@@ -489,9 +382,7 @@ instr LoopChannel
         if gkLoopSpeed[kChannel] != gkNextLoopSpeed[kChannel] then
             gkLoopSpeed[kChannel] = gkNextLoopSpeed[kChannel]
         endif
-    endif
-
-    UpdateLoopFxChain iChannel
+    endif    
 endin
 
 
